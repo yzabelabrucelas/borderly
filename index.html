@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Borderly</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl text-center">
+    <h1 class="text-3xl font-bold text-gray-800 mb-2">Borderly</h1>
+    <p class="text-gray-600 mb-6">Upload one or two images to make a collage. A 50px white border will be added.</p>
+
+    <div class="flex flex-col items-center space-y-4">
+      <!-- File input for user to select multiple images -->
+      <label for="imageUpload" class="cursor-pointer bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full transition-colors duration-300">
+                Upload Images
+                <input type="file" id="imageUpload" class="hidden" accept="image/*" multiple />
+            </label>
+
+      <!-- Loading indicator and status message -->
+      <div id="statusMessage" class="text-sm text-gray-500 h-6"></div>
+
+      <!-- Display for the processed image -->
+      <div id="processedImageContainer"
+        class="relative w-full rounded-lg overflow-hidden flex items-center justify-center border-4 border-dashed border-gray-400 p-4">
+        <p id="placeholderText" class="text-gray-400">Preview</p>
+        <img id="processedImage" class="hidden max-w-full max-h-full" alt="Processed Image" />
+      </div>
+
+      <!-- Download button for the processed image -->
+      <a id="downloadButton" href="#"
+        class="hidden bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-full transition-colors duration-300">
+        Download Image
+      </a>
+    </div>
+
+    <p class="text-xs text-gray-400 mt-4">Made by Yza Brucelas</p>
+  </div>
+
+  <script>
+    const imageUpload = document.getElementById('imageUpload');
+        const processedImage = document.getElementById('processedImage');
+        const downloadButton = document.getElementById('downloadButton');
+        const placeholderText = document.getElementById('placeholderText');
+        const statusMessage = document.getElementById('statusMessage');
+
+        imageUpload.addEventListener('change', handleImageUpload);
+
+        downloadButton.addEventListener('click', () => {
+        // Wait for the download to start before clearing the canvas
+            setTimeout(() => {
+                processedImage.classList.add('hidden');
+                processedImage.src = '';
+                downloadButton.classList.add('hidden');
+                placeholderText.classList.remove('hidden');
+                statusMessage.textContent = '';
+            }, 100);
+        });
+
+
+        function handleImageUpload(event) {
+            const files = event.target.files;
+            if (files.length === 0) return;
+
+            // Check if the number of files exceeds the limit
+            if (files.length > 2) {
+                statusMessage.textContent = 'Please select a maximum of two images.';
+                return;
+            }
+
+            statusMessage.textContent = `Processing ${files.length} image(s)...`;
+            placeholderText.classList.add('hidden');
+            processedImage.classList.add('hidden');
+            downloadButton.classList.add('hidden');
+
+            const readers = Array.from(files).map(file => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            // Get the filename of the first uploaded file to use for the download
+            const originalFilename = files[0].name.split('.')[0];
+
+            // Wait for all images to load, then create the collage
+            Promise.all(readers)
+                .then(images => {
+                    const processedDataUrl = createCollage(images, 50); // 50px padding
+                    processedImage.src = processedDataUrl;
+                    processedImage.classList.remove('hidden');
+                    downloadButton.href = processedDataUrl;
+                    downloadButton.download = `${originalFilename}_border.jpg`;
+                    downloadButton.classList.remove('hidden');
+                    statusMessage.textContent = 'Done! You can now download your image.';
+                })
+                .catch(error => {
+                    statusMessage.textContent = 'An error occurred during processing.';
+                    console.error(error);
+                });
+        }
+
+        /**
+         * Creates a vertical collage from an array of images, with different aspect ratios
+         * based on their orientation.
+         * @param {Image[]} images - An array of loaded image elements.
+         * @param {number} padding - The desired padding in pixels.
+         * @returns {string} - The data URL of the final collage.
+         */
+        function createCollage(images, padding) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Base dimension for the collage images to ensure consistent quality
+            const targetWidth = 1080;
+            
+            let collageHeight = 0;
+
+            const processedImages = images.map(img => {
+                const imgRatio = img.width / img.height;
+                let targetRatio;
+
+                if (imgRatio > 1) { // Horizontal photo
+                    targetRatio = 3 / 2;
+                } else { // Vertical or square photo
+                    targetRatio = 4 / 5;
+                }
+
+                let sx, sy, sWidth, sHeight;
+                let finalWidth, finalHeight;
+
+                if (imgRatio > targetRatio) {
+                    // Source image is wider than target ratio, crop horizontally
+                    sHeight = img.height;
+                    sWidth = img.height * targetRatio;
+                    sx = (img.width - sWidth) / 2;
+                    sy = 0;
+                    finalWidth = targetWidth;
+                    finalHeight = targetWidth / targetRatio;
+                } else {
+                    // Source image is taller/same aspect ratio, crop vertically
+                    sWidth = img.width;
+                    sHeight = img.width / targetRatio;
+                    sx = 0;
+                    sy = (img.height - sHeight) / 2;
+                    finalWidth = targetWidth;
+                    finalHeight = targetWidth / targetRatio;
+                }
+                
+                collageHeight += finalHeight;
+                return { img, sx, sy, sWidth, sHeight, finalWidth, finalHeight };
+            });
+
+            // Set the final canvas size including padding
+            canvas.width = targetWidth + padding * 2;
+            canvas.height = collageHeight + padding * (images.length + 1);
+
+            // Fill the canvas with a white background for the padding effect
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let currentY = padding;
+
+            // Draw each processed image onto the canvas
+            processedImages.forEach(({ img, sx, sy, sWidth, sHeight, finalWidth, finalHeight }) => {
+                const x = padding;
+                const y = currentY;
+                ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, finalWidth, finalHeight);
+                currentY += finalHeight + padding;
+            });
+
+            // Return the data URL of the final image as a JPEG with 90% quality
+            return canvas.toDataURL('image/jpeg', 0.9);
+        }
+
+  </script>
+</body>
+
+</html>
